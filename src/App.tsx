@@ -31,6 +31,14 @@ export default function App() {
   const [isCopyingAll, setIsCopyingAll] = useState(false);
   const [showRawView, setShowRawView] = useState(false);
   const [status, setStatus] = useState<'idle' | 'scanning' | 'ready'>('ready');
+  const [proxyHealth, setProxyHealth] = useState<string>('Checking...');
+
+  // Check proxy health
+  useEffect(() => {
+    fetch('/proxy/')
+      .then(r => setProxyHealth(r.ok ? 'ONLINE_PORTAL_ACTIVE' : `REDUCED_ACCESS_${r.status}`))
+      .catch(() => setProxyHealth('OFFLINE_OR_BLOCKED'));
+  }, []);
 
   // Simulate generation effect on first load
   useEffect(() => {

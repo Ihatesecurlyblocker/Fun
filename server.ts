@@ -12,63 +12,85 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
+  // Logger
+  app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+  });
+
+  // Helper to check if a path is a portal slug
+  const isPortalSlug = (p: string) => {
+    // Pattern: category-trait-number
+    return /^[a-z-]+-[a-z-]+-\d{4}$/.test(p);
+  };
+
   // The proxy logic based on user request
-  app.all('/proxy/*', async (req, res) => {
+  app.all('/proxy/:path(*)', async (req, res) => {
     try {
       const targetBase = 'https://nikehub.pages.dev';
-      // extract the remaining path after /proxy/
-      const remainingPath = req.params[0] || '';
-      const search = new URL(req.url, `http://${req.headers.host}`).search;
-      const targetUrl = new URL(remainingPath + search, targetBase).toString();
+      let remainingPath = req.params.path || '';
+      
+      // If it's one of our 100k portal slugs, we proxy to the root of the target
+      // This allows the "100,000 links" to all work as entry points.
+      if (isPortalSlug(remainingPath)) {
+        remainingPath = '';
+      }
+
+      // Ensure proper path joining
+      const search = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : '';
+      
+      // Construct target URL carefully
+      let targetPath = remainingPath.startsWith('/') ? remainingPath : '/' + remainingPath;
+      const targetUrl = new URL(targetBase + targetPath + search).toString();
+
+      console.log(`Proxying: ${req.url} -> ${targetUrl}`);
 
       const headers = new Headers();
-      // Copy incoming headers but filter out some
+      const forbiddenHeaders = [
+        'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization',
+        'te', 'trailer', 'transfer-encoding', 'upgrade', 'host',
+        'cf-connecting-ip', 'x-forwarded-for'
+      ];
+
       Object.entries(req.headers).forEach(([key, value]) => {
-        if (typeof value === 'string') {
-          headers.set(key, value);
-        } else if (Array.isArray(value)) {
-          value.forEach(v => headers.append(key, v));
-        }
+        if (forbiddenHeaders.includes(key.toLowerCase())) return;
+        if (typeof value === 'string') headers.set(key, value);
+        else if (Array.isArray(value)) value.forEach(v => headers.append(key, v));
       });
 
-      headers.delete('cf-connecting-ip');
-      headers.delete('x-forwarded-for');
-      headers.delete('host'); // Ensure fetch uses target host
-      headers.set('referer', targetBase);
+      headers.set('referer', targetBase + '/');
       headers.set('origin', targetBase);
+      headers.set('user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36');
 
       const response = await fetch(targetUrl, {
         method: req.method,
         headers: headers,
-        // body: req.method !== 'GET' && req.method !== 'HEAD' ? req : undefined, // Express req is a stream
         redirect: 'follow',
       });
 
-      // Special handling for bodies if needed, but for now let's pipe the response
-      const responseHeaders = new Headers(response.headers);
+      console.log(`Response: ${targetUrl} [${response.status}]`);
+
+      const responseHeaders = new Headers();
+      response.headers.forEach((v, k) => {
+        const key = k.toLowerCase();
+        if (['content-security-policy', 'x-frame-options', 'content-encoding', 'transfer-encoding', 'connection'].includes(key)) return;
+        responseHeaders.set(k, v);
+      });
+
       responseHeaders.set('Access-Control-Allow-Origin', '*');
       responseHeaders.set('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
-      responseHeaders.delete('x-frame-options');
-      responseHeaders.delete('content-security-policy');
-      responseHeaders.set('x-frame-options', 'ALLOW');
-      responseHeaders.set('cache-control', 'no-store, no-cache');
+      responseHeaders.set('X-Frame-Options', 'ALLOWALL');
+      responseHeaders.set('Content-Security-Policy', "frame-ancestors *");
+      responseHeaders.set('Cache-Control', 'no-store, no-cache');
 
       res.status(response.status);
       responseHeaders.forEach((v, k) => res.setHeader(k, v));
 
-      // Proxy the body
-      if (response.body) {
-        const reader = response.body.getReader();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          res.write(value);
-        }
-      }
-      res.end();
+      const buffer = await response.arrayBuffer();
+      res.send(Buffer.from(buffer));
     } catch (error) {
       console.error('Proxy error:', error);
-      res.status(500).send('Proxy error');
+      res.status(500).send('Proxy error: ' + (error instanceof Error ? error.message : 'Unknown error'));
     }
   });
 
