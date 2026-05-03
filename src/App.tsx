@@ -70,16 +70,18 @@ export default function App() {
     return filteredIndices.slice(start, start + PAGE_SIZE);
   }, [filteredIndices, currentPage]);
 
-  const handleCopy = (text: string, index: number) => {
-    const fullUrl = window.location.origin + text;
+  const handleCopy = (fullUrl: string, index: number) => {
     navigator.clipboard.writeText(fullUrl);
     setCopiedIndex(index);
     setTimeout(() => setCopiedIndex(null), 2000);
   };
 
-  // Generate all links helper
   const getAllLinks = () => {
-    return Array.from({ length: TOTAL_LINKS }, (_, i) => window.location.origin + PROXY_BASE + '/' + indexToSlug(i)).join('\n');
+    const host = window.location.host;
+    return Array.from({ length: TOTAL_LINKS }, (_, i) => {
+      const slug = indexToSlug(i);
+      return `https://${slug}.${host}`;
+    }).join('\n');
   };
 
   const handleCopyAll = async () => {
@@ -87,7 +89,6 @@ export default function App() {
     try {
       const allLinks = getAllLinks();
       await navigator.clipboard.writeText(allLinks);
-      // Small toast-like feedback could be here, but we'll use state
       setTimeout(() => setIsCopyingAll(false), 2000);
     } catch (err) {
       console.error('Failed to copy all:', err);
@@ -215,10 +216,10 @@ export default function App() {
           {/* Table Content */}
           <div className="flex flex-col">
             <AnimatePresence mode="popLayout">
-              {paginatedIndices.length > 0 ? (
-                paginatedIndices.map((idx) => {
+                {paginatedIndices.map((idx) => {
                   const slug = indexToSlug(idx);
-                  const proxyPath = `${PROXY_BASE}/${slug}`;
+                  const displayUrl = `${slug}.${window.location.host}`;
+                  const fullUrl = `https://${displayUrl}`;
                   return (
                     <motion.div 
                       key={idx}
@@ -232,18 +233,18 @@ export default function App() {
                       </div>
                       <div className="flex items-center gap-2 font-mono text-xs font-bold truncate">
                         <LinkIcon size={14} className="opacity-30 group-hover:opacity-100 group-hover:text-orange-500" />
-                        {proxyPath}
+                        {fullUrl}
                       </div>
                       <div className="flex justify-end gap-2">
                         <button 
-                          onClick={() => handleCopy(proxyPath, idx)}
+                          onClick={() => handleCopy(fullUrl, idx)}
                           title="Copy Link"
                           className="p-2 hover:bg-orange-600 transition-colors"
                         >
                           {copiedIndex === idx ? <Check size={14} /> : <Copy size={14} />}
                         </button>
                         <a 
-                          href={proxyPath} 
+                          href={fullUrl} 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="p-2 hover:bg-orange-600 transition-colors"
@@ -254,12 +255,7 @@ export default function App() {
                       </div>
                     </motion.div>
                   );
-                })
-              ) : (
-                <div className="p-12 text-center font-mono opacity-30 italic text-xs uppercase">
-                  No matching endpoints found in database.
-                </div>
-              )}
+                })}
             </AnimatePresence>
           </div>
         </section>
