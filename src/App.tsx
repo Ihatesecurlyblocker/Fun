@@ -80,7 +80,7 @@ export default function App() {
     const host = window.location.host;
     return Array.from({ length: TOTAL_LINKS }, (_, i) => {
       const slug = indexToSlug(i);
-      return `https://${slug}.${host}`;
+      return `https://${slug}.${host}/`;
     }).join('\n');
   };
 
@@ -219,7 +219,7 @@ export default function App() {
                 {paginatedIndices.map((idx) => {
                   const slug = indexToSlug(idx);
                   const displayUrl = `${slug}.${window.location.host}`;
-                  const fullUrl = `https://${displayUrl}`;
+                  const fullUrl = `https://${displayUrl}/`;
                   return (
                     <motion.div 
                       key={idx}
